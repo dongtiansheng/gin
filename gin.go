@@ -26,13 +26,13 @@ var (
 
 var defaultAppEngine bool
 
-// HandlerFunc defines the handler used by gin middleware as return value.
+// HandlerFunc定义为被gin中间件作为返回值使用的处理器
 type HandlerFunc func(*Context)
 
-// HandlersChain defines a HandlerFunc array.
+// HandlersChain 一组HandlerFunc
 type HandlersChain []HandlerFunc
 
-// Last returns the last handler in the chain. ie. the last handler is the main one.
+// Last方法返回HandlersChain中最后一个Handler，最后的handler也是最主要的，一般HandlersChain中是包含中间件和处理用户请求的方法，最后一个handler就是用来处理用户请求的
 func (c HandlersChain) Last() HandlerFunc {
 	if length := len(c); length > 0 {
 		return c[length-1]
@@ -40,7 +40,7 @@ func (c HandlersChain) Last() HandlerFunc {
 	return nil
 }
 
-// RouteInfo represents a request route's specification which contains method and path and its handler.
+//RouteInfo表示请求一个路由的标准，包括Method，Path，和Handler
 type RouteInfo struct {
 	Method      string
 	Path        string
@@ -48,13 +48,12 @@ type RouteInfo struct {
 	HandlerFunc HandlerFunc
 }
 
-// RoutesInfo defines a RouteInfo array.
+// RoutesInfo是一组RouteInfo
 type RoutesInfo []RouteInfo
 
-// Engine is the framework's instance, it contains the muxer, middleware and configuration settings.
-// Create an instance of Engine, by using New() or Default()
+//Engine是框架的实例，它包含muxer(复用器？pool？)，中间件和配置设置，通过New()和Default()创建一个Engine的实例！
 type Engine struct {
-	RouterGroup
+	RouterGroup //RouterGroup继承了IRouter IRouter继承了IRoutes  RouterGroup是用来管理路由的
 
 	// Enables automatic redirection if the current route can't be matched but a
 	// handler for the path with (without) the trailing slash exists.
@@ -107,13 +106,20 @@ type Engine struct {
 	secureJSONPrefix string
 	HTMLRender       render.HTMLRender
 	FuncMap          template.FuncMap
-	allNoRoute       HandlersChain
-	allNoMethod      HandlersChain
-	noRoute          HandlersChain
-	noMethod         HandlersChain
-	pool             sync.Pool
-	trees            methodTrees
-	maxParams        uint16
+	//以上都是不关心的一些配置和html模板相关的内容
+
+	//所有没路由的Handler
+	allNoRoute HandlersChain
+	//所有没方法的Handler
+	allNoMethod HandlersChain
+	noRoute     HandlersChain
+	noMethod    HandlersChain
+	//context pool，支持context复用，减少对象创建提高性能。
+	pool sync.Pool
+	// 方法数节点的集合  是一个树形结构
+	trees methodTrees
+	//TODO 最大参数数量？ 现在还不明白什么意思  等会看到再来补充
+	maxParams uint16
 }
 
 var _ IRouter = &Engine{}
@@ -144,7 +150,7 @@ func New() *Engine {
 		RemoveExtraSlash:       false,
 		UnescapePathValues:     true,
 		MaxMultipartMemory:     defaultMultipartMemory,
-		trees:                  make(methodTrees, 0, 9),
+		trees:                  make(methodTrees, 0, 9), //每一个路由 都只会最多有9种方法 所以容量是9
 		delims:                 render.Delims{Left: "{{", Right: "}}"},
 		secureJSONPrefix:       "while(1);",
 	}
@@ -155,14 +161,17 @@ func New() *Engine {
 	return engine
 }
 
-// Default returns an Engine instance with the Logger and Recovery middleware already attached.
+// Default()会调用New 并且加载两个中间件 Logger()和Recovery()
 func Default() *Engine {
+	//会检测一下go的版本  如果go的版本小于1.11 则会进行Warning提示
 	debugPrintWARNINGDefault()
 	engine := New()
+	//添加Log和Recovery中间件
 	engine.Use(Logger(), Recovery())
 	return engine
 }
 
+//配置Context()  TODO 再往后看看
 func (engine *Engine) allocateContext() *Context {
 	v := make(Params, 0, engine.maxParams)
 	return &Context{engine: engine, params: &v}
@@ -222,7 +231,7 @@ func (engine *Engine) SetFuncMap(funcMap template.FuncMap) {
 	engine.FuncMap = funcMap
 }
 
-// NoRoute adds handlers for NoRoute. It return a 404 code by default.
+// NoRoute添加没有路由的处理器 默认返回404  暂时不太理解NoRoute和NoMethod的作用
 func (engine *Engine) NoRoute(handlers ...HandlerFunc) {
 	engine.noRoute = handlers
 	engine.rebuild404Handlers()
@@ -237,6 +246,7 @@ func (engine *Engine) NoMethod(handlers ...HandlerFunc) {
 // Use attaches a global middleware to the router. ie. the middleware attached though Use() will be
 // included in the handlers chain for every single request. Even 404, 405, static files...
 // For example, this is the right place for a logger or error management middleware.
+//添加全局的中间件，中间件通过Use()被附加到每个单个请求的HandlersChain
 func (engine *Engine) Use(middleware ...HandlerFunc) IRoutes {
 	engine.RouterGroup.Use(middleware...)
 	engine.rebuild404Handlers()
